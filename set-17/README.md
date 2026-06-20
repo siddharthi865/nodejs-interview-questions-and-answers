@@ -25,6 +25,167 @@
 
 ## Question 1. How do you generate hash digests using the `crypto` module?
 
+# Short answer
+
+Use the built-in `crypto` module's `createHash()` API. Create a hash object, update it with the input data (string, `Buffer`, or stream), and call `digest()` to produce the final hash in a format such as `hex` or `base64`.
+
+---
+
+# Explanation
+
+The `crypto` module provides access to cryptographic hash algorithms like **SHA-256**, **SHA-512**, and **SHA-3** (depending on the OpenSSL version bundled with Node.js).
+
+Basic flow:
+
+1. Create a hash instance with the desired algorithm.
+2. Feed data using one or more `update()` calls.
+3. Finalize with `digest()`.
+
+```text
+Input Data
+     │
+     ▼
+createHash('sha256')
+     │
+update(data)
+     │
+digest('hex')
+     │
+     ▼
+Hash Digest
+```
+
+### Common algorithms
+
+- `sha256` → General-purpose, widely recommended.
+- `sha512` → Larger digest, slightly higher CPU cost.
+- `sha1` → Cryptographically broken; avoid for security-sensitive use.
+- `md5` → Fast but insecure; only suitable for non-security checksums.
+
+### Important characteristics
+
+- Hashes are **one-way** functions—you cannot recover the original data.
+- The same input always produces the same digest.
+- Even a one-byte change produces a completely different hash (avalanche effect).
+
+### Streaming large files
+
+For large inputs, avoid loading everything into memory. Pipe the file through a stream and update the hash incrementally.
+
+### Password hashing
+
+Do **not** use `createHash()` for password storage. Instead use dedicated password hashing algorithms such as:
+
+- `crypto.scrypt()`
+- `crypto.pbkdf2()`
+- Argon2 (third-party library)
+
+These are intentionally slow and resistant to brute-force attacks.
+
+### Performance considerations
+
+- Hashing is CPU work performed by OpenSSL.
+- Small payloads are very fast.
+- Hashing very large files can consume CPU; streaming avoids excessive memory usage.
+- For extremely CPU-intensive workloads, consider using `worker_threads` to prevent blocking the event loop.
+
+---
+
+# Example (JavaScript)
+
+```javascript
+import { createHash } from "node:crypto";
+
+const data = "Hello, Node.js!";
+
+const hash = createHash("sha256").update(data, "utf8").digest("hex");
+
+console.log(hash);
+// Example:
+// 8ef5c0... (64-character SHA-256 digest)
+```
+
+### Hashing a file efficiently
+
+```javascript
+import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
+
+async function hashFile(path) {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(path);
+
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", reject);
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+
+hashFile("./large-file.zip").then(console.log);
+```
+
+---
+
+# Testing
+
+### Unit testing
+
+Verify that known inputs generate expected digests.
+
+Using the built-in Node.js test runner:
+
+```javascript
+import test from "node:test";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+
+test("SHA-256 hash", () => {
+  const digest = createHash("sha256").update("abc").digest("hex");
+
+  assert.equal(
+    digest,
+    "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+  );
+});
+```
+
+Run:
+
+```bash
+node --test
+```
+
+Integration testing should verify file hashing, streamed inputs, and interoperability with hashes produced by other systems or languages.
+
+---
+
+# Ops & Monitoring
+
+- Log the algorithm used (`sha256`, `sha512`) but **never** log sensitive input data.
+- Monitor CPU utilization if hashing large files or high request volumes.
+- Instrument hashing-heavy endpoints with OpenTelemetry spans to identify latency hotspots.
+- Handle stream errors correctly when hashing files.
+- Use worker threads for CPU-heavy hashing workloads if they noticeably impact event-loop responsiveness.
+
+---
+
+# Deployment & Scaling
+
+- Use modern Node.js LTS versions (Node.js 20+ recommended) for current OpenSSL support.
+- Stream files instead of buffering them entirely in memory.
+- Hashing is stateless, making it easy to scale horizontally across containers or instances.
+- For serverless environments, avoid hashing unnecessarily large payloads within request time limits.
+- Ensure consistent OpenSSL versions across environments if algorithm availability is important.
+
+---
+
+# Pitfalls
+
+- **Don't use MD5 or SHA-1** for security-sensitive applications.
+- **Don't use `createHash()` for password storage**—use `scrypt()` or `pbkdf2()` instead.
+- **Don't load multi-GB files into memory**; hash them using streams.
+
 ## Question 2. How do you encrypt and decrypt data using Node.js?
 
 ## Question 3. How do you convert strings to buffers and vice versa?
