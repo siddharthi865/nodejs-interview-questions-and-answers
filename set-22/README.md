@@ -25,6 +25,128 @@
 
 ## Question 1. How do you get the current script filename using Node.js globals?
 
+# Short answer
+
+In **CommonJS**, use the global variable `__filename` to get the absolute path of the current script.
+
+In **ES Modules (ESM)**, `__filename` is **not available**. Instead, derive it from `import.meta.url` using `fileURLToPath()`.
+
+---
+
+# Explanation
+
+### CommonJS (`.js` or `.cjs`)
+
+Node.js automatically provides several globals to every CommonJS module:
+
+- `__filename` → Absolute path of the current file.
+- `__dirname` → Absolute path of the current directory.
+- `module`
+- `exports`
+- `require`
+
+Example:
+
+```text
+File: /home/app/server.js
+
+__filename
+=> /home/app/server.js
+```
+
+These values are injected by Node.js during module loading—they are **not true global variables** available everywhere in JavaScript.
+
+### ES Modules (`.mjs` or `"type": "module"`)
+
+ES Modules do **not** expose `__filename` or `__dirname`.
+
+Instead:
+
+1. Use `import.meta.url` to get the file URL.
+2. Convert it to a filesystem path using `fileURLToPath()`.
+
+This approach is portable across operating systems.
+
+---
+
+# Example
+
+### JavaScript (CommonJS)
+
+```javascript
+console.log("Filename:", __filename);
+console.log("Directory:", __dirname);
+```
+
+Output:
+
+```text
+Filename: /Users/john/projects/demo/index.js
+Directory: /Users/john/projects/demo
+```
+
+### JavaScript (ESM)
+
+```javascript
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+console.log(__filename);
+console.log(__dirname);
+```
+
+---
+
+# Testing
+
+Unit test (using Node's built-in test runner):
+
+```javascript
+import test from "node:test";
+import assert from "node:assert";
+
+test("filename should be defined", () => {
+  assert.ok(__filename.length > 0);
+});
+```
+
+Run:
+
+```bash
+node --test
+```
+
+For integration testing, verify that the resolved paths match the expected project structure when the application is executed from different working directories.
+
+---
+
+# Ops & Monitoring
+
+- Avoid hardcoding absolute paths; build paths using `path.join(__dirname, ...)` (CommonJS) or the ESM equivalent.
+- Log resolved paths only during startup or debugging, as they may expose filesystem structure.
+- Include file path information in structured logs for debugging, but avoid leaking sensitive deployment paths in production.
+- OpenTelemetry tracing is generally unrelated to filename resolution, but startup diagnostics can record module metadata if useful.
+
+---
+
+# Deployment & Scaling
+
+- `__filename` is stable regardless of the process's current working directory (`process.cwd()`).
+- Containerized applications should use relative paths from `__dirname`/resolved module paths instead of assuming fixed filesystem layouts.
+- For serverless environments, bundle tools may rewrite paths; validate path-dependent code after bundling.
+- Prefer modern Node.js versions (Node.js 18+ LTS, 20+, or newer) for consistent ESM behavior.
+
+---
+
+# Pitfalls
+
+- **Do not confuse `__filename` with `process.cwd()`**—`__filename` is the current module's path, while `process.cwd()` is where the process was started.
+- **`__filename` is unavailable in ES Modules**; use `import.meta.url` with `fileURLToPath()`.
+- Use the `path` module instead of string concatenation when constructing filesystem paths.
+
 ## Question 2. How do you create a simple event listener using EventEmitter?
 
 ## Question 3. How do you remove an event listener in Node.js?
