@@ -25,6 +25,139 @@
 
 ## Question 1. What is the difference between `setInterval` and `setTimeout`?
 
+## Short answer
+
+`setTimeout` runs a function once after a delay, while `setInterval` runs a function repeatedly at a fixed interval until it is cleared.
+
+---
+
+## Explanation
+
+From a Node.js runtime perspective, both `setTimeout` and `setInterval` are provided by **libuv’s timer phase** in the event loop.
+
+### `setTimeout(fn, delay)`
+
+- Schedules **one-time execution**
+- The callback is placed in the timer queue after at least `delay` ms
+- Actual execution may be delayed due to event loop backlog (timers are not precise)
+
+### `setInterval(fn, interval)`
+
+- Schedules **repeated execution**
+- After each execution, the timer is rescheduled automatically
+- Drift can occur if execution time + event loop delay exceeds interval
+
+### Key runtime behavior difference
+
+- `setTimeout` creates a **single timer entry**
+- `setInterval` creates a **recurring timer entry managed by libuv**
+- If the event loop is blocked (CPU-heavy work), both are delayed, but intervals may “pile up” behaviorally depending on timing
+
+### Trade-offs
+
+- `setTimeout` is safer for **controlled scheduling and recursion patterns**
+- `setInterval` is simpler but can cause **overlapping executions or drift**
+- In production systems, `setTimeout`-based recursion is often preferred for reliability
+
+---
+
+## Example (TypeScript)
+
+```ts
+// Node.js >= 18+, TypeScript (ESM)
+
+function periodicTask() {
+  console.log("Task executed at", new Date().toISOString());
+
+  // safer alternative to setInterval: recursive setTimeout
+  setTimeout(periodicTask, 1000);
+}
+
+// start after 1 second
+setTimeout(periodicTask, 1000);
+
+// Traditional setInterval example (less precise under load)
+const intervalId = setInterval(() => {
+  console.log("setInterval tick at", new Date().toISOString());
+}, 1000);
+
+// stop after 5 seconds
+setTimeout(() => {
+  clearInterval(intervalId);
+  console.log("Interval cleared");
+}, 5000);
+```
+
+---
+
+## Testing
+
+- Use fake timers to control time-based behavior.
+
+### Jest example:
+
+```ts
+import { jest } from "@jest/globals";
+
+jest.useFakeTimers();
+
+test("setTimeout runs callback", () => {
+  const fn = jest.fn();
+
+  setTimeout(fn, 1000);
+
+  jest.advanceTimersByTime(1000);
+
+  expect(fn).toHaveBeenCalledTimes(1);
+});
+```
+
+Run:
+
+```bash
+npx jest
+```
+
+---
+
+## Ops & Monitoring
+
+- Avoid long-running intervals without monitoring (can accumulate memory/state leaks)
+- Track timer-based tasks with:
+  - OpenTelemetry spans for scheduled jobs
+  - Metrics: execution duration, drift, missed intervals
+
+- Always ensure cleanup (`clearTimeout`, `clearInterval`) on shutdown signals (`SIGTERM`)
+- In PM2/systemd, handle graceful shutdown to avoid orphan timers
+
+---
+
+## Deployment & Scaling
+
+- In clustered setups, `setInterval` runs **per process**, not globally
+- For distributed systems, prefer:
+  - Redis-based schedulers (BullMQ, Agenda)
+  - External cron systems (Kubernetes CronJobs, cloud schedulers)
+
+- In serverless (AWS Lambda):
+  - Avoid long intervals; functions are stateless and ephemeral
+
+- Ensure Node.js version ≥ 18 for stable timer behavior and improved event loop performance
+
+---
+
+## Pitfalls and Best Practices
+
+- `setInterval` can cause **overlapping executions** if tasks take longer than interval
+- Timer drift increases under CPU load or blocking synchronous code
+- Forgetting cleanup leads to **memory leaks and hanging processes**
+
+Best practices:
+
+- Prefer recursive `setTimeout` for precision
+- Keep timer callbacks non-blocking
+- Always handle shutdown cleanup
+
 ## Question 2. How do you use the `crypto` module in Node.js?
 
 ## Question 3. How do you generate a random UUID in Node.js?
