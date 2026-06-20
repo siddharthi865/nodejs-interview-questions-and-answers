@@ -25,6 +25,266 @@
 
 ## Question 1. How do you implement gzip response compression in Express.js?
 
+# Short answer
+
+In Express.js, the standard way to enable gzip (and Brotli where supported) response compression is to use the `compression` middleware. It compresses responses based on the client's `Accept-Encoding` header, reducing bandwidth and improving page/API response times at the cost of some CPU usage.
+
+---
+
+# Explanation
+
+The `compression` middleware transparently compresses HTTP responses using Node.js's built-in `zlib` module.
+
+### How it works
+
+1. The client sends:
+
+```http
+Accept-Encoding: gzip, br, deflate
+```
+
+2. Express checks whether the response is compressible (based on `Content-Type`).
+
+3. If compression is appropriate:
+   - Response data is streamed through `zlib`.
+   - Express sets:
+
+```http
+Content-Encoding: gzip
+Vary: Accept-Encoding
+```
+
+4. The browser or HTTP client automatically decompresses the response.
+
+---
+
+### Installation
+
+```bash
+npm install compression
+```
+
+---
+
+### Production Example (JavaScript)
+
+```javascript
+import express from "express";
+import compression from "compression";
+
+const app = express();
+
+// Enable gzip/Brotli compression
+app.use(
+  compression({
+    level: 6, // Good balance between CPU and compression
+    threshold: 1024, // Compress responses larger than 1 KB
+  }),
+);
+
+app.get("/users", async (req, res) => {
+  const users = Array.from({ length: 10000 }, (_, i) => ({
+    id: i,
+    name: `User ${i}`,
+  }));
+
+  res.json(users);
+});
+
+app.listen(3000, () => {
+  console.log("Server running on http://localhost:3000");
+});
+```
+
+Test it:
+
+```bash
+curl -H "Accept-Encoding: gzip" -I http://localhost:3000/users
+```
+
+Expected:
+
+```http
+Content-Encoding: gzip
+Vary: Accept-Encoding
+```
+
+---
+
+### When responses are compressed
+
+Typically compressed:
+
+- JSON APIs
+- HTML
+- CSS
+- JavaScript
+- SVG
+- XML
+- Text files
+
+Usually **not** compressed:
+
+- JPEG
+- PNG
+- GIF
+- WebP
+- MP4
+- ZIP
+- PDF
+
+These formats are already compressed, so gzip wastes CPU with little or no size reduction.
+
+---
+
+### Custom filtering
+
+You can decide which responses should be compressed.
+
+```javascript
+import compression from "compression";
+
+app.use(
+  compression({
+    filter(req, res) {
+      if (req.headers["x-no-compression"]) {
+        return false;
+      }
+
+      return compression.filter(req, res);
+    },
+  }),
+);
+```
+
+This allows clients to disable compression:
+
+```http
+GET /users
+X-No-Compression: true
+```
+
+---
+
+### Performance considerations
+
+**Advantages**
+
+- Smaller payloads
+- Faster page loads
+- Lower bandwidth costs
+- Better performance over slower networks
+
+**Trade-offs**
+
+- Uses CPU for compression
+- High compression levels increase latency
+- Minimal benefit for already-compressed assets
+
+A compression level of **5–7** is generally a good production balance.
+
+---
+
+### Reverse proxy considerations
+
+In production, many deployments terminate compression at a reverse proxy such as:
+
+- NGINX
+- Apache HTTP Server
+- Envoy
+
+Reasons include:
+
+- Better CPU utilization
+- Centralized compression configuration
+- Easier caching
+- Consistent behavior across services
+
+If your proxy already compresses responses, disable Express compression to avoid unnecessary work.
+
+---
+
+### Brotli support
+
+Modern Node.js versions support Brotli (`br`) via `zlib`.
+
+If the client advertises:
+
+```http
+Accept-Encoding: br, gzip
+```
+
+the middleware can serve Brotli, which often achieves 15–25% better compression than gzip for text assets, though compression may require more CPU.
+
+---
+
+# Testing
+
+### Unit testing
+
+Use **Jest** or Node's built-in test runner with **Supertest** to verify the middleware.
+
+Example:
+
+```javascript
+import request from "supertest";
+
+test("returns gzip response", async () => {
+  const res = await request(app).get("/users").set("Accept-Encoding", "gzip");
+
+  expect(res.headers["content-encoding"]).toBe("gzip");
+});
+```
+
+Run:
+
+```bash
+npm test
+```
+
+or
+
+```bash
+node --test
+```
+
+### Integration testing
+
+Verify:
+
+- `Content-Encoding` is present when appropriate.
+- Small responses below the threshold are not compressed.
+- Binary responses are not compressed.
+- Responses remain valid after decompression.
+
+---
+
+# Ops & Monitoring
+
+- Log response sizes before and after compression to measure bandwidth savings.
+- Track CPU usage, as compression is CPU-intensive under heavy load.
+- Export metrics such as compression ratio and response latency using OpenTelemetry.
+- Monitor request latency (P95/P99) to ensure compression doesn't become a bottleneck.
+- Handle compression errors gracefully by allowing responses to fall back to uncompressed output if streaming compression fails.
+
+---
+
+# Deployment & Scaling
+
+- Prefer enabling compression at a reverse proxy or load balancer when serving many applications.
+- In containerized deployments, ensure CPU limits are sufficient, since compression consumes CPU.
+- Horizontal scaling can offset CPU overhead introduced by compression.
+- Serverless environments should consider cold-start CPU budgets; compress only responses large enough to justify the cost.
+- Use a current LTS version of Node.js (20.x or newer) for the latest `zlib` performance improvements and Brotli support.
+
+---
+
+# Pitfalls
+
+- **Don't compress already compressed files** (images, videos, ZIPs).
+- **Avoid very high compression levels (8–9)** unless bandwidth savings outweigh increased CPU and latency.
+- **Ensure the `Vary: Accept-Encoding` header is present** so caches store separate compressed and uncompressed variants.
+
 ## Question 2. How do you implement streaming CSV or JSON responses?
 
 ## Question 3. How do you implement streaming large datasets from a database?
