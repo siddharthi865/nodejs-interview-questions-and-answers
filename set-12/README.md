@@ -25,6 +25,167 @@
 
 ## Question 1. How do you check if a directory exists in Node.js?
 
+# Short answer
+
+Use `fs.promises.access()` or `fs.promises.stat()` to check whether a directory exists. If you specifically need to verify that the path is a directory (and not just any file), use `stat()` and call `.isDirectory()`. Avoid using deprecated APIs like `fs.exists()` and avoid "check-then-act" patterns when the next step is to create/read the directory because they introduce race conditions.
+
+---
+
+# Explanation
+
+Node.js provides several ways to determine whether a directory exists.
+
+### 1. `fs.promises.stat()` (Recommended)
+
+This is the most reliable approach when you need to know:
+
+- Does the path exist?
+- Is it actually a directory?
+
+```text
+Path
+ ├── exists? → No → ENOENT
+ └── Yes
+      ├── Directory → isDirectory() === true
+      └── File → isDirectory() === false
+```
+
+Example flow:
+
+- `await stat(path)`
+- If it succeeds, call `stats.isDirectory()`
+- If it throws `ENOENT`, the directory doesn't exist.
+
+---
+
+### 2. `fs.promises.access()`
+
+`access()` checks whether a path is accessible.
+
+Example:
+
+```js
+await fs.access(path);
+```
+
+However, it **doesn't tell you whether the path is a file or directory**. It's useful only when you care about existence or permissions.
+
+---
+
+### 3. Avoid `fs.exists()`
+
+`fs.exists()` is deprecated because its callback API is inconsistent with Node's standard error-first callbacks.
+
+`fs.existsSync()` still exists and is acceptable for:
+
+- startup scripts
+- CLI tools
+- build scripts
+
+Avoid it in performance-sensitive server request paths because synchronous filesystem calls block the event loop.
+
+---
+
+## Race condition consideration
+
+A common mistake is:
+
+```text
+if directory exists
+    create file
+```
+
+Another process could delete the directory between the check and the file creation.
+
+Instead:
+
+```text
+Try the operation
+Handle ENOENT if it fails
+```
+
+This follows the EAFP (Easier to Ask Forgiveness than Permission) pattern and is the recommended approach in Node.js.
+
+---
+
+# Example (JavaScript)
+
+```javascript
+import { stat } from "node:fs/promises";
+
+async function directoryExists(dirPath) {
+  try {
+    const stats = await stat(dirPath);
+    return stats.isDirectory();
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return false;
+    }
+    throw err; // Unexpected filesystem error
+  }
+}
+
+(async () => {
+  const exists = await directoryExists("./logs");
+  console.log(exists ? "Directory exists" : "Directory does not exist");
+})();
+```
+
+**Requires:** Node.js 14+ (works best on modern Node.js 18+ with ESM).
+
+---
+
+# Testing
+
+### Unit Testing
+
+Mock `node:fs/promises` using Jest or the built-in Node test runner to simulate:
+
+- existing directory
+- existing file
+- missing directory (`ENOENT`)
+- permission errors (`EACCES`)
+
+Example (Node.js built-in test runner):
+
+```bash
+node --test
+```
+
+Integration test:
+
+- Create a temporary directory using `fs.mkdtemp()`.
+- Verify `directoryExists()` returns `true`.
+- Remove it and verify it returns `false`.
+
+---
+
+# Ops & Monitoring
+
+- Log unexpected filesystem errors (`EACCES`, `EPERM`, `EMFILE`) with structured logging.
+- Track filesystem latency if directory checks are frequent.
+- Instrument filesystem operations with OpenTelemetry spans when debugging I/O bottlenecks.
+- Avoid repeated directory checks on every request; cache immutable paths when appropriate.
+- Handle transient filesystem failures gracefully instead of crashing the process.
+
+---
+
+# Deployment & Scaling
+
+- Prefer asynchronous filesystem APIs to avoid blocking the event loop.
+- In containers, verify mounted volumes exist before startup or create them with `mkdir({ recursive: true })`.
+- For serverless environments, remember that writable storage is typically limited (often `/tmp`).
+- Avoid excessive existence checks on shared network filesystems, as latency can become significant.
+- Use current LTS versions of Node.js (20.x or newer) for the latest performance improvements and API stability.
+
+---
+
+# Pitfalls
+
+- **Don't use `fs.exists()`**—it is deprecated.
+- **Don't use synchronous APIs (`existsSync`, `statSync`)** in request handlers because they block the event loop.
+- **Don't rely on "check-then-act" logic**; perform the filesystem operation directly and handle `ENOENT` or other expected errors.
+
 ## Question 2. How do you create nested directories in Node.js?
 
 ## Question 3. What is the difference between `fs.mkdir` and `fs.mkdirSync`?
